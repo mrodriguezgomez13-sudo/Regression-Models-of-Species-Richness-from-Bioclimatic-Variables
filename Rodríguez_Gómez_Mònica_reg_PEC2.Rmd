@@ -1,0 +1,544 @@
+---
+title: "Prueba de Evaluación Contínua 2"
+author: "Mònica Rodríguez Gómez"
+date: "2026-06-11"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Préviamente a la realización de los ejercicios cargamos el archivo `dataset_WorldClim.csv` compartido.
+
+```{r}
+# Cargamos el archivo csv
+datos<- read.csv(file="C:/Users/Monica/Documents/UNI/UOC/2n semestre/Regresión modelos y métodos/PEC2/dataset_WorldClim.csv", 
+                 header = TRUE)
+head(datos)
+```
+
+Hacemos una pequeña revisión de los datos para ver que coincida con lo indicado en el enunciado.
+
+```{r}
+# Análisis exploratorio de los datos
+dim(datos)
+str(datos)
+sum(is.na(datos))
+```
+Los datos coinciden con el enunciado y no se observan valores NA. Observamos que la variable *biome* es de tipo `character` por eso debemos transformarla a `factor`.
+```{r}
+datos$biome<- as.factor(datos$biome)
+```
+
+## Ejercicio 1
+
+a)  
+
+```{r warning=FALSE}
+# Cargamos las librerías necesarias
+library(ggplot2)
+library(GGally)
+```
+
+```{r warning=FALSE, message=FALSE}
+# Histograma de la variable respuesta biodiversidad
+ggplot(datos, aes(x=richness))+
+         geom_histogram(fill="lightblue", color="white")+
+         labs(title="Distribución de la Biodiversidad", 
+              x="Número de especies", y="Frecuencia")+
+  theme_minimal()
+```
+El histograma de la variable repsuesta `richness` muestra una distribución aproximadamente normal y simétrica, centrada entre las 20–30 especies, con un ligero sesgo hacia valores bajos y algunas observaciones con riqueza elevada; por encima de 40 especies, esto podría indicar zonas con una biodiversidad muy elevada respecto al conjunto.
+
+```{r warning=FALSE, message=FALSE}
+# Generamos los gráfico de correlación entre variables
+# Diferenciamos los puntos según el bioma
+p <-ggpairs(datos, columns = 1:7, 
+        aes(color=biome, alpha=0.5),
+        upper = list(continuous = wrap("cor", size = 2)),
+        lower = list(continuous = wrap("points", size = 0.7)),
+        diag  = list(continuous = wrap("densityDiag")))+
+  labs(title = "Matriz de dispersión por bioma")+
+  theme_bw()
+p<-p+theme(axis.text= element_text(size = 6))
+p
+
+# Material utilizado: https://r-charts.com/correlation/ggpairs/
+```
+
+En este conjunto de gráficos observamos los patrones de dispersión de las variables en función del bioma y las matrices de correlacion entre las variables, los resultados muestran colinealidad elevada entre algunas de las variables. Concretamente, *bio1* (temperatura media anual) y *bio5* (temperatura máxima del mes más cálido) presentan una correlación de 0.967, y *bio6* (temperatura mínima del mes más frío) correlaciona con ambas en 0.918 y 0.902, respectivamente. Esta estructura es esperable ya que las temperaturas extremas y medias están intrínsecamente relacionadas dentro de un mismo clima. El resto de variables presentan correlaciones bajas, incluso algunas negativas, indicando que aportan información independiente.
+
+En cuanto a la diferenciación por bioma observamos una clara diferenciación en la riqueza de especies, obteniendo mayores valores en bosques y menores en zonas desérticas, lo que sugiere un fuerte efecto del tipo de ecosistema sobre la biodiversidad. De igual manera, para la variable *bio12* también se observa una diferenciación, donde zonas desérticas presentan menor precipitación, las zonas de bosque presentan mayores precipitaciones, y las praderas presentan los valores más elevados de precipitación. Estas diferenciaciones  permanece al compararlas` con el resto de variables. Para el resto de variables y comparaciones no se observan patrones claros, a excepción de la comparación entre *bio1* y *bio5*, *bio1* y *bio6*, y *bio5* y *bio6* donde se observa una asociación lineal positiva, consistente con la elevada correlación entre estas variables.
+
+b) Tal y como se indica en el enunciado, se ajusta un modelo de regresión lineal múltiple con las seis variables bioclimáticas (bio1, bio4, bio5, bio6, bio12 y bio15), sin incluir la variable categórica *biome*, ya que es una variable que describe la localización de la biodiversidad.
+
+```{r}
+# Generamos el modelo lineal
+m_1<- lm(richness~bio1 + bio4 + bio5 + bio6 + bio12 + bio15, data=datos)
+summary(m_1)
+```
+El modelo es globalmente significativo (F = 14.89, p-valor = 1.743e-12), lo que indica que el conjunto de variables climáticas explican aproximadamente el 41% de la variabilidad global observada en la riqueza de especies.
+
+La única variable que resulta estadísticamente significativa es *bio12* (precipitación anual), con un coeficiente estimado de 0.021 (p-valor = 1.06e-13), lo que indica que un incremento en la precipitación se asocia positivamente con la riqueza de especies. Sin embargo, el resto de variables predictoras no resultan estadísticamente significativas a nivel individual, lo que podría indicar multicolinealidad elevada. Por eso, calculamos el Factor de Inflación de la Varianza (VIF) y el *número de condición k*.
+
+```{r warning=FALSE, message=FALSE}
+# Multicolinealidad
+# Para detectar posibles problemas en el modelo
+# Cargamos la librería necesaria
+library(car)
+```
+```{r}
+# Calculamos VIF del modelo
+vif(m_1)
+```
+Observamos que *bio1* presenta un VIF de 18.63 y *bio5* de 16.0, ambos valores por encima de 10, lo que confirma una multicolinealidad grave, que el error típico de estos predictores está muy inflado y que la estimación de su coeficiente es probablemente muy inestable. Por otro lado, la variable *bio6* presenta un VIF de 6.53, lo que indica multicolinealidad alta, por lo que su coeficiente estimado tampoco es fiable. Esto dificulta la interpretación individual de cada predictor.
+
+```{r}
+# Número de condición kappa
+kappa_m1 <- model.matrix(m_1)[, -1]
+kappa(kappa_m1, exact = TRUE)
+```
+El *número de condición K* = 147.47, muy por encima del umbral mayor o igual a 30 calificado como situación muy grave de la matriz, confirma la presencia de una dependencia casi lineal severa entre los predictores.
+
+c)  
+```{r}
+# Gráficos de diagnóstico del modelo
+par(mfrow=c(2,2))
+plot(m_1)
+```
+El gráfico de Residuos vs. Valores ajustados muestra una distribución relativamente homogénea, y aunque se aprecian algunas observaciones con residuos positivos elevados (especialmente las observaciones 76, 52 y 19), sugiere que el supuesto de linealidad es razonable.
+
+```{r}
+shapiro.test(residuals(m_1))
+```
+En el QQ-plot los puntos se desvían de la línea teórica en ambas colas, lo que indica que los residuos presentan colas pesadas, especialmente en la superior. Este patrón es consistente con el resultado del test de Shapiro-Wilk (p-valor = 0.00024) donde se rechaza la hipótesis de normalidad de los residuos.
+
+En cuanto al gráfico de Scale-Location, parece haber una ligera desviación de la  horizontal que podría indicar una leve heteroedasticidad, pero no parece alarmante. Y para el gráfico de Residuos vs. Leverage ningunq observación supera la distancia de Cook de 0.5 ni se sitúa fuera de las líneas de referencia, lo que indica que no hay observaciones con una influencia excesiva sobre los coeficientes estimados.
+
+```{r}
+crPlots(m_1)
+```
+
+Los gráficos de componente más residuo muestran que *bio4*, *bio12* y *bio15* tienen aproximadamente una relación lineal con *richness*, mientras que *bio1*, *bio5* y *bio6* presentan una ligera curvatura, lo que podría sugerir que una transformación mejoraría el ajuste para estas variables.
+
+```{r}
+# Analizamos observaciones influyentes con distancia de Cook
+cooksd <- cooks.distance(m_1)
+# Criterio C>4/(n-p-1), donde p es el número de variables (6)
+which(cooksd > 4/(nrow(datos)-6-1))
+# Criterio C>1 para observaciones extremas
+which(cooksd > 1)
+```
+El análisis de la distancia de Cook identifica varias observaciones potencialmente influyentes (19, 44, 54, 70 y 76). Aun así, ninguna de estas observaciones supera la distancia de Cook de 1, por lo que no se consideran problemáticas.
+
+d) La matriz de correlaciones obtenida en el apartado a y el cálculo de los Factores de Inflación de la Varianza (VIF), muestran una asociación muy fuerte entre las variables *bio1*, *bio5* y *bio6*, especialmente entre *bio1* y *bio5*, lo que ayuda a explicar por qué ninguna de las dos resulta significativa individualmente en el modelo. Debido a que la multicolinealidad es uno de los fenómenos más evidentes observados en los resultados obtenidos, se considera que es una buena elección para relacionar con la discusión teórica presentada en el apartado 8 sobre *Multicolinealidad* del *Módulo 5: Diagnóstico del modelo* de la asignatura. Donde se explica que, cuando existe una dependencia lineal aproximada entre las variables predictoras, los estimadores de mínimos cuadrados pueden presentar varianzas muy grandes y aumento de los errores estándar, provocando problemas en la precisión de los estimadores, en la interpretación de los coeficientes, así como en la significancia estadística de diferentes pruebas.
+
+e)  
+
+```{r}
+library(MASS)
+m1_aic<-stepAIC(m_1, direction = "both")
+formula(m1_aic)
+```
+El modelo seleccionado por AIC contiene las variables predictoras *bio1*, *bio4* y *bio12*. La eliminación de *bio5*, *bio6* y *bio15* indicaría que aportaban información redundante que probablemente ya contenía *bio1*; por eso no ha sido eliminada.
+
+f)  
+```{r message=FALSE, warning=FALSE}
+# Cargamos la libería necesaria
+library(leaps)
+```
+```{r}
+# Generamos la selección de subconjutno en base a R^2 ajutado
+seleccion <- regsubsets(richness ~ bio1 + bio4 + bio5 + bio6 + bio12 + bio15
+                        , data = datos, nbest = 1, nvmax = 6)
+resumen_sel <- summary(seleccion)
+
+# Buscamos las variables seleccionadas por el modelo
+which.max(resumen_sel$adjr2)
+coef(seleccion, which.max(resumen_sel$adjr2))
+```
+De nuevo, el modelo ha seleccionado el subconjunto de *bio1*, *bio4* y *bio12*, indicando que este subconjunto maximiza el R^2 ajustado.
+
+```{r}
+plot(resumen_sel$adjr2, type = "b", xlab = "Número de predictores", 
+     ylab = expression(R^2 ~ ajustado), main = expression("Selección de subconjuntos"))
+```
+
+El gráfico confirma una mejora en el R^2 ajustado hasta las 3 variables, pero al añadir una cuarta se observa que empieza a descender el ajuste. Indicando, de nuevo, que se trata del mejor modelo en cuanto a ajuste y parsimonia.
+
+g)  Tanto en el apartado e como en el apartado f, hemos obtenido que el modelo seleccionado era el que contenía las variables bio1, bio 4 y bio12. Por lo que evaluamos si las variables eliminadas en el
+proceso (bio5, bio6 y bio15) aportan información adicional al modelo.
+
+$$
+H_0: \ \beta_{\text{bio5}}=\beta_{\text{bio6}}=\beta_{\text{bio15}}=0
+$$
+
+$$
+H_1: \ \text{al menos uno de estos coeficientes es distinto de cero}
+$$
+
+
+```{r}
+# Generamos el modelo lineal reducido
+m_1_reducido<- lm(richness ~ bio1 + bio4 + bio12,data = datos)
+
+# Hacemos los test F (ANOVA)
+anova(m_1_reducido,m_1)
+```
+Dado que el p-valor (0.82) no se rechaza la hipótesis nula. No existe evidencia estadística  de que bio5, bio6 y bio15 aporten información significativa al modelo una vez que ya se incluyen bio1, bio4 y bio12, de modo que modelo reducido final es preferible al completo.
+
+Por lo que la temperatura media anual (*bio1*), la estacionalidad de la temperatura (*bio4*) y la precipitación anual (*bio12*) son los principales determinantes de lariqueza de especies a escala global. Mientras que La temperatura máxima del mes más cálido (*bio5*), la temperatura mínima del mes más frío (*bio6*) y la estacionalidad de la precipitacion (*bio15*) no añaden información adicional, ya que esta información está capturada por la temperatura media y la precipitación anual.
+
+```{r}
+summary(m_1_reducido)
+```
+
+## Ejercicio 2
+
+De nuevo, usaremos las variables climáticas para explicar y predecir la variabe *richness*.
+
+a)  
+```{r}
+# Seleccionamos el conjunto de observaciones
+test_obs<- seq(1, nrow(datos), by=5)
+
+# Generamos los conjuntos de datos: train y test
+test<- datos[test_obs,]
+train<- datos[-test_obs,]
+
+# Separamos las variables x y de cada conjunto de datos
+# Para train
+x_train<- train[,c("bio1","bio4","bio5","bio6","bio12","bio15")]
+y_train<- train$richness
+
+# Para test
+x_test<- test[,c("bio1","bio4","bio5","bio6","bio12","bio15")]
+y_test<- test$richness
+
+# Estandarizamos solo para train
+# Buscamos la desviación típica y la media
+media <- apply(x_train, 2, mean)
+desv <- apply(x_train, 2, sd)
+
+# Aplicamos al conjunto de train
+x_train_sc <- scale(x_train, center = media,scale = desv)
+
+# Aplicamos la transformación a test
+x_test_sc <- scale( x_test, center = media, scale = desv)
+```
+
+b)  
+
+```{r warning=FALSE, message=FALSE}
+# cargamos la librería necesaria: 
+library(pls)
+```
+```{r}
+m1_pcr<- pcr(y_train~x_train_sc, scale=FALSE, validation ="CV")
+summary(m1_pcr)
+```
+```{r}
+validationplot(m1_pcr, val.type = "MSEP")
+```
+La cross-validación RMSEP mínima se encuentra en M=4, observamos en el gráfico que el MSEP disminuye desde el intercepto (0), hasta el cuarto componente. A partir de la quinta componente, el error de validación cruzada aumenta ligeramente, lo que indica sobreajuste. Con 4 componentes, el modelo PCR explica el 97.75% de la varianza de los predictores, pero solo el 46.85% de la varianza de la variable respuesta `richness`, debido a que la reducción de la dimensión se produce sobre las variables predictoras y no tiene en cuenta la respuesta de la variable Y.
+
+```{r}
+pred_pcr_m1<- predict(m1_pcr, newdata=x_test_sc, ncomp=4)
+rmse_pcr_m1<- sqrt(mean((y_test-pred_pcr_m1)^2))
+rmse_pcr_m1
+```
+El RMSE sobre el conjunto test con M = 4 componentes es de 9.553.
+
+c)  
+```{r}
+pls_m1<- plsr(y_train~x_train_sc, scale=FALSE, validation ="CV")
+summary(pls_m1)
+```
+Según el modelo PLS se seleccionan M=3 componentes, puesto que tiene el RMSEP más pequeño (7.877), un componente menos que PCR. Esto se debe a que PLS reduce la dimensionalidad del problema creando nuevas componentes pero usa tanto las variables predictoras como la respuesta para explicar, por cada variable predictora, cuánto se relaciona con la variable respuesta. Con 3 componentes, PLS explica el 80.40% de la varianza de las predictoras y el 46.86% de la varianza de `richness`. De modo que el modelo PCR y el modelo PLS explican prácticamente la misma varianza de `richness` confirmando que los componentes elegidos por el modelo PLS minimizan más el error de predicción.
+
+```{r}
+pred_pls <- predict(pls_m1, newdata = x_test_sc, ncomp = 3)
+rmse_pls <- sqrt(mean((y_test - pred_pls)^2))
+rmse_pls
+```
+
+El RMSE sobre el test con PLS es de 9.539, siendo ligeramente inferior al de PCR (9.553), lo que confirma la leve ventaja predictiva.
+
+d)  
+
+```{r message=FALSE, warning=FALSE}
+# Cargamos la librería necesaria para generar el modelo Ridge
+library(glmnet)
+```
+
+```{r}
+# Este paquete requiere matrices
+x_train_mat <- as.matrix(x_train_sc)
+x_test_mat<- as.matrix(x_test_sc)
+
+# Fijamos la semilla laeatoria para garantizar reproducibilidad
+set.seed(123)
+ridge_m1<- cv.glmnet(x_train_mat, y_train, alpha=0 ,standardize = TRUE)
+```
+
+```{r}
+# Buscamos la mejor lambda
+lambda_m1_ridge<- ridge_m1$lambda.min
+lambda_m1_ridge
+```
+La validación cruzada con el modelo Ridge selecciona $\lambda$ = 0.611 como el parámetro de penalización óptimo, es decir, el valor de lambda que da lugar al mejor modelo.
+
+```{r}
+# Genermos el mejor modelo ajustado
+ridge_lambd <- glmnet(x_train_mat,y_train,alpha = 0,
+                      lambda=lambda_m1_ridge)
+ridge_lambd
+coef(ridge_lambd)
+```
+
+```{r}
+plot(glmnet(x_train_mat,y_train,alpha = 0))
+abline(v = -log(lambda_m1_ridge), col = "red", lty = 2)
+```
+
+En este gráfico se observa la evolución de los coeficientes en base al parámetro de penalización ($\lambda$) y en línea continua roja observamos el valor de lambda óptimo y el valor que contienen los coeficientes en este punto. Por tanto, el valor de lambda que consigue el menor error es 0.611, explicando aproximadamente el 46.7% de la variabilidad de la variable respuesta. 
+
+```{r}
+pred_ridge<- predict(ridge_m1, newx=x_test_mat,
+                     s = "lambda.min")
+rmse_ridge <- sqrt(mean((y_test - pred_ridge)^2))
+rmse_ridge
+#(Fernández-Casal et al., 2024)
+```
+El RMSE sobre el test con Ridge es de 9.369
+
+e)  
+
+```{r}
+# Cambiamos el argumento alpha=1 para el modelo LASSO
+# Hacemos validación cruzada
+lasso_m1<- cv.glmnet(x_train_mat, y_train, alpha=1,standardize = TRUE)
+```
+
+```{r}
+# Mejor lambda
+lambda_m1_lasso<- lasso_m1$lambda.min
+lambda_m1_lasso
+```
+La validación cruzada selecciona $\lambda$ = 0.064 como parámetro que da el mejor modelo para LASSO.
+
+```{r}
+# Gneramos el modelo
+m1_lasso <- glmnet(x_train_mat, y_train, alpha = 1, 
+                   lambda = lambda_m1_lasso)
+
+# Ahora podemos hacer la predicción
+pred_lasso<- predict(lasso_m1, newx=x_test_mat,
+                     s="lambda.min")
+rmse_lasso <- sqrt(mean((y_test - pred_lasso)^2))
+rmse_lasso
+```
+El RMSE sobre el test con LASSO es de 9.539, prácticamente idéntico al de PLS.
+
+```{r}
+# Coeficientes del modelo Ridge con lambda óptimo
+coef_ridge <- coef(ridge_lambd)
+ 
+# Coeficientes del modelo LASSO con lambda óptimo
+coef_lasso <- coef(m1_lasso)
+ 
+# Generamos la tabla comparativa de los coeficientes
+tabla_coef <- data.frame(Variable = rownames(coef_ridge),
+                          Ridge= round(as.vector(coef_ridge), 4),
+                          LASSO= round(as.vector(coef_lasso), 4))
+tabla_coef
+#(Fernández-Casal et al., 2024)
+```
+
+El modelo Ridge contrae todos los coeficientes hacia 0 sin llegar a eliminar ninguno, mientras que LASSO puede llegar a producir coeficientes con valor de 0 seleccionando así variables. En este caso, se observan diferencias en la magnitud de algunos coeficientes, los coeficientes *bio1*, *bio6* y *bio15* tienen mayor penalización en el modelo Ridge, mientras que el resto de coeficientes tienen mayor penalización en el modelo LASSO. No obstante, no se ha producido ninguna deleción por parte de LASSO. Esto podría deberse a la elevada colinealidad entre algunas de las variables, y por tanto que el conjunto de las variables aportan información al modelo sin ser ninguna de ellas irrelevante.
+
+f)  
+
+```{r}
+# Generamos la tabla a partir de los datos obtenidos
+# en los apartados anteriores
+tabla_rmse <- data.frame(Modelo = c("PCR", "PLS", "Ridge", "LASSO"),
+                         RMSE = c(rmse_pcr_m1,rmse_pls,
+                                  rmse_ridge,rmse_lasso))
+tabla_rmse
+```
+La tabla muestra que las diferencias entre métodos son pequeñas lo que sugiere que la información predictiva contenida en las variables climáticas es relativamente estable independientemente de la técnica utilizada.
+
+El modelo Ridge presenta el  menor error de predicción en test (RMSE = 9.368) sugieriendo que la regularización continua presenta un mejor rendimiento predictivo, ya que estabiliza los coeficientes sin eliminar variables.
+
+El modelo PLS y LASSO presentan un error de predicción ligeramente inferior al obtenido con PCR. Este resultado era esperable, ya que PLS construye las componentes utilizando tanto la información de las variables explicativas como la de la variable respuesta, mientras que PCR únicamente considera la estructura de los predictores.
+
+## Ejercicio 3
+
+Previo a la realización de los apartados cargamos los datos necesarios.
+
+```{r message=FALSE, warning=FALSE}
+# Cargamos el paquete y la librería mlbench
+library(mlbench)
+
+data(PimaIndiansDiabetes)
+
+datos2 <- PimaIndiansDiabetes
+```
+
+
+a)  
+```{r}
+# Exploración inicial
+dim(datos2)
+str(datos2)
+summary(datos2)
+```
+El dataset `PimaIndiansDiabetes` contiene 768 observaciones y 9 variables. La variable respuesta *diabetes* es un factor con dos niveles: negativo (500 casos) y positivo (268 casos).
+
+```{r}
+# Buscamos valores 0 en cada variable
+sapply(datos2[, c("glucose","pressure","triceps",
+            "insulin","mass")],function(x) sum(x == 0))
+```
+
+Dado el elevado número de ceros presentes en algunas variables (especialmente *insulin* y *triceps*), eliminar las observaciones donde estan presentes los 0 supondría una pérdida importante de información. Por ello, es mejor aplicar alguna técnica de imputación.
+
+```{r}
+# Distribución de variables cuantitativas
+# Usaremos los datos originales
+par(mfrow = c(2,2))
+for(x in names(datos2)[1:8]){
+  hist(datos2[[x]], main=x, 
+       xlab = "Valor observado",
+       col = "lightblue",
+       border = "white")}
+```
+
+Varias variables presentan una distribución asimétrica positiva, donde hay elevada concentración de observaciones en valores bajos y una disminución progresiva de la frecuencia a medida que aumentan los valores de x. Esto se observa en *pregnant*, *insulin*, *pedegree* y *age*. En estos casos podría ser conveniente aplicar transformaciones logarítmicas para reducir asimetría.
+
+```{r}
+par(mfrow = c(2, 2))
+hist(datos2$insulin,col = "lightblue",border = "white", 
+     main = "insulin",xlab = "")
+hist(log(datos2$insulin), col = "tomato",border = "white",
+     main = "log(insulin)", xlab = "")
+hist(datos2$pedigree,col = "lightblue",border = "white", 
+     main = "pedigree",xlab = "")
+hist(log(datos2$pedigree),col = "tomato",border = "white",
+     main = "log(pedigree)",xlab = "")
+```
+Aunque las variables *age* y *pregnant* presentan cierta asimetría se dejan en su escala original, ya que ambas tienen interpretación clínica directa en escala original y no se considera necesario transformarlas.
+
+Por otro lado, las variables *insilun* y *pedigree* si se transforman observándose una mejora en la asimetría de la distribución.
+
+b)  Los 0 son reemplazados primero a NA y luego se imputan con la mediana de cada variable.
+
+```{r}
+variables <- c("glucose","pressure","triceps","insulin","mass")
+
+# Sustituimos los 0 por NA 
+# Seran tratados como valores faltantes
+# Aplicamos la mediana a cada variable
+for(v in variables){
+  datos2[[v]][datos2[[v]] == 0] <- NA
+  datos2[[v]][is.na(datos2[[v]])] <- median(datos2[[v]], na.rm = TRUE)}
+```
+
+c)  
+
+```{r}
+# Generamos el gráfico para ver la relación entre
+# age y glucosa
+ggplot(datos2, aes(x = age, y = glucose)) +
+  geom_point(alpha = 0.5) +
+    geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  geom_smooth(method = "lm",  se = TRUE, linetype = "dashed", color = "red") +
+  labs(title = "Relación age vs glucose")+
+  theme_minimal()
+```
+
+```{r}
+cor(datos2$age, datos2$glucose, use="complete.obs")
+```
+Se observa una elevada dispersión de los datos, muy centrada en valores bajos, aunque puede apreciarse una leve tendencia creciente de la glucosa con la edad. Además, la relación no es perfectamente lineal, aunque al principio se observa un aumento de la glucosa con la edad, un poco antes de los 40 años se estabiliza e incluso desciende ligeramente respecto a la tendencia lineal esperada. Por otro lado, se obtuvo una correlación positiva de 0.267, lo que indica una asociación lineal positiva débil entre ambas variables. Por lo que podría considerarse razonable la hipótesis de linelidad como primera aproximación. No obstante, debido a la desviación en los datos de elevada edad, podría considerarse modelos alternativos como una regresión a trozos, que permite expresar diferentes rectas en un mismo modelo siendo, por tanto, más interpretable que otros métodos que imponen una estrcutura más rígida.
+
+d) La variable respuesta (diabetes) es binaria (positivo/negativo) por lo que usar la función un modelo lineal clásico (`lm()`) para generar el modelo, resultaría en predicciones fuera del rango [0,1] y perdería significado. Mientras que el modelo logístico (`glm()`) permite estimar la probabilidad de una variable cualitativa binaria en función de una variable cuantitativa, clasificando las observaciones en un grupo u otro de la variable predictiva.
+
+```{r}
+m2_log<-glm(diabetes ~ pregnant + glucose + pressure + triceps +
+                log(insulin) + mass + log(pedigree) + age,
+              data   = datos2,family = "binomial")
+summary(m2_log)
+#(Amat, 2016; Villalba, 2018)
+```
+```{r}
+# Exponenciamos los coeficientes para obtener el Odds ratio
+OR<- exp(coef(m2_log))
+# (Fernández-Casal et al., 2024)
+```
+Los odds ratio del modelo logístico indican que las variables con mayor impacto en la probabilidad de tener diabetes son el embarazo, la glucosa, el índice de masa corporal y el historial familiar (pedigree), siendo esta última la más influyente y, por tanto, las más relevantes a nivel clínico. Por cada incremento en estas variables, la probabilidad de padecer diabetes aumenta. Mientras que la presión arterial muestra un valor por debajo de 1, lo que sugiere poca contribución. 
+
+e)  
+
+```{r}
+# Primero generamos la preducción
+log_pred<- predict(m2_log, type="response")
+
+# Clasificamos según el umbral de 0.5
+pred_clas <- ifelse(log_pred > 0.5, "pos", "neg")
+pred_clas <- factor(pred_clas, levels = c("neg","pos"))
+
+datos2$diabetes <- factor(datos2$diabetes, levels = c("neg","pos"))
+```
+
+```{r}
+# Generamos la matriz de confusión
+table(Predicho = pred_clas, Real = datos2$diabetes)
+```
+La matriz de confusión obtenida utilizando un umbral de clasificación de 0.5 muestra que el modelo clasifica correctamente 439 individuos sin diabetes y 153 individuos con diabetes. Sin embargo, se producen 61 falsos positivos y 115 falsos negativos.
+
+```{r message=FALSE, warning=FALSE}
+# Cargamos la librería necesaria
+library(caret)
+# Generamos la matriz de confusión
+conf_mat <- confusionMatrix(pred_clas, datos2$diabetes, 
+                            positive = "pos")
+conf_mat
+# (Fernández-Casal et al., 2024)
+```
+La exactitud del modelo es del 77.08%, mientras que la sensibilidad del modelo es del 57.1%. Aunque puede considerarse un porcentage moderado de detecciones correctas, a nivel clínico supone no identificar a casi la mitad de los pacientes que presentan la enfermedad.
+
+Por otro lado, la especificidad alcanza el 87.8%, indicando que el modelo identifica correctamente a la mayoría de los individuos sanos. Esto sugiere que el modelo es más eficaz reconociendo casos negativos que positivos.
+
+```{r}
+# Creamos el data frame de un nuevo individuo
+# para embarazo interpretamos que ha tenido 1
+# Para triceps, debido a que no hay datos
+# Usaremos la media
+nuevo <- data.frame(pregnant = 1, glucose = 150,
+                    pressure = 80,triceps = median(datos2$triceps),
+                    insulin = 180,mass = 35,
+                    pedigree = 0.8, age = 50)
+```
+
+```{r}
+prob_nueva <- predict(m2_log, newdata = nuevo,
+                      type = "response")
+
+prob_nueva
+```
+En base a los valores de las variables indicados, la probabilidad de padecer diabetes para una mujer perteneciente a la etnia Pima residentes en Arizona es de 0.639 (63.9%). 
+
+## Bibliografía:
+
+- Amat, J. (2016). Análisis en R (documento RPubs). RPubs. https://rpubs.com/joaquin_ar/229736
+
+- Carmona Pontaque, F. (2024) Diagnosi del model: Regressió: models i mètodes. [Recurs d’aprenentatge textual]. 1.a ed.
+Barcelona: Fundació Universitat Oberta de Catalunya (FUOC).
+
+- Fernández-Casal R., Costa J. y Oviedo M. (2024). Métodos predictivos de aprendizaje estadístico. Servizo de Publicacións. Universidade da Coruña. https://doi.org/10.17979/spudc.9788497498937.
+
+- R-Charts. ggplot2 package. https://r-charts.com/ggplot2/
+
+- Villalba, F. (2018).Aprendizaje supervisado en R. Capítulo 6: Regresión logistica binaria. GitHub Pages https://fervilber.github.io/Aprendizaje-supervisado-en-R/glm.html
+
